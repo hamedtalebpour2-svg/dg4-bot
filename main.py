@@ -104,6 +104,31 @@ async def style(call: types.CallbackQuery):
             data["style"],
             data["price"],
             "WAITING_PAYMENT"
+            await call.message.answer(
+    f"""
+💰 PAYMENT REQUIRED
+
+Order ID: {cur.lastrowid}
+Service: {data['service']}
+Style: {data['style']}
+Price: ${data['price']}
+
+────────────────────
+💳 PAYMENT INFO
+
+Token: USDT (SPL)
+Network: Solana ONLY ⚡
+
+Wallet:
+{WALLET}
+
+────────────────────
+
+⚠️ Send ONLY USDT on Solana network
+
+📸 After payment send screenshot here.
+"""
+)
         ))
 
         await db.commit()
