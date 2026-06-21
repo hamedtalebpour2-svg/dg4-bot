@@ -8,7 +8,7 @@ from aiogram.filters import Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 # ================= CONFIG =================
-TOKEN = "8208102735:AAHYRjL9sMS4qJobbbprv4cPzLCCNgatUL8"
+TOKEN = "8208102735:AAHodLVCGzxjWCjUCkds8QiYgtuigl4BDb0"
 ADMIN_ID = 7833539117
 WALLET = "EVr1Xn8mm23AHh9voQea1fxGecc34pffNDFKrnkBA9Gu"
 
