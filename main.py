@@ -154,7 +154,7 @@ Price: ${data['price']}
 """
     )
 
-    await call.answer()
+await call.answer()
 
 # ================= PAYMENT SCREENSHOT (USER ONLY) =================
 @dp.message(F.photo | F.document)
