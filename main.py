@@ -7,13 +7,14 @@ from aiogram.filters import Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 # ================= CONFIG =================
-TOKEN = "8208102735:AAHodLVCGzxjWCjUCkds8QiYgtuigl4BDb0"
+TOKEN = "YOUR_BOT_TOKEN"
 ADMIN_ID = 7833539117
+
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
-user_state = {}
-order_state = {}
+user_state = {}     # انتخاب سرویس + استایل
+order_state = {}    # نگهداری order id
 
 # ================= DB =================
 async def init_db():
@@ -40,7 +41,7 @@ async def start(msg: types.Message):
         [InlineKeyboardButton(text="📦 My Orders", callback_data="track")]
     ])
 
-    await msg.answer("🎨 Welcome to DG4 Fiverr Bot", reply_markup=kb)
+    await msg.answer("🎨 Welcome to DG4 Bot", reply_markup=kb)
 
 # ================= SERVICES =================
 @dp.callback_query(F.data == "services")
@@ -57,13 +58,13 @@ async def services(call: types.CallbackQuery):
 # ================= SELECT SERVICE =================
 @dp.callback_query(F.data.in_(["logo", "brand", "social"]))
 async def select_service(call: types.CallbackQuery):
-    data = {
+    data_map = {
         "logo": ("Logo Design", 20),
         "brand": ("Brand Identity", 45),
         "social": ("Social Kit", 15)
     }
 
-    service, price = data[call.data]
+    service, price = data_map[call.data]
 
     user_state[call.from_user.id] = {
         "service": service,
@@ -80,11 +81,11 @@ async def select_service(call: types.CallbackQuery):
     await call.message.answer("Choose style:", reply_markup=kb)
     await call.answer()
 
-# ================= STYLE + CREATE ORDER =================
+# ================= STYLE + ORDER =================
 @dp.callback_query(F.data.in_(["minimal", "modern", "luxury", "gaming"]))
 async def style(call: types.CallbackQuery):
     user_id = call.from_user.id
-    data = user_data.get(user_id)
+    data = user_state.get(user_id)
 
     if not data:
         await call.message.answer("❌ Session expired. Send /start again.")
@@ -108,6 +109,11 @@ async def style(call: types.CallbackQuery):
         await db.commit()
         order_id = cur.lastrowid
 
+    # ذخیره order برای دریافت پرداخت
+    order_state[user_id] = order_id
+
+    wallet = "EVr1Xn8mm23AHh9voQea1fxGecc34pffNDFKrnkBA9Gu"
+
     await call.message.answer(
         f"""
 💰 PAYMENT REQUIRED
@@ -121,16 +127,13 @@ Price: ${data['price']}
 💳 PAYMENT INFO
 
 Token: USDT (SPL)
-Network: Solana ONLY ⚡
+Network: Solana ONLY ⚡️
 
 Wallet:
-EVr1Xn8mm23AHh9voQea1fxGecc34pffNDFKrnkBA9Gu
+{wallet}
 
-────────────────────
-
-⚠️ Send ONLY USDT on Solana network
-
-📸 After payment send screenshot here.
+⚠️ Send ONLY on Solana network
+📸 Send payment screenshot after payment
 """
     )
 
@@ -149,7 +152,7 @@ Price: ${data['price']}
 
     await call.answer()
 
-# ================= PAYMENT SCREENSHOT =================
+# ================= PAYMENT PROOF =================
 @dp.message(F.photo | F.document)
 async def payment(msg: types.Message):
 
@@ -157,12 +160,7 @@ async def payment(msg: types.Message):
     if not order_id:
         return
 
-    file_id = None
-
-    if msg.photo:
-        file_id = msg.photo[-1].file_id
-    elif msg.document:
-        file_id = msg.document.file_id
+    file_id = msg.photo[-1].file_id if msg.photo else msg.document.file_id
 
     async with aiosqlite.connect("orders.db") as db:
         await db.execute("""
@@ -171,16 +169,15 @@ async def payment(msg: types.Message):
         """, (file_id, order_id))
         await db.commit()
 
-    # send to admin ALWAYS
     await bot.send_photo(
         ADMIN_ID,
         file_id,
-        caption=f"💳 Payment proof\nOrder ID: {order_id}\n\nReply /approve {order_id}"
+        caption=f"💳 Payment proof\nOrder ID: {order_id}\nReply: /approve {order_id}"
     )
 
-    await msg.answer("✅ Payment sent to admin for review.")
+    await msg.answer("✅ Sent to admin for review.")
 
-# ================= APPROVE PAYMENT =================
+# ================= APPROVE =================
 @dp.message(Command("approve"))
 async def approve(msg: types.Message):
 
@@ -203,7 +200,7 @@ async def approve(msg: types.Message):
         user = await cur.fetchone()
 
     if user:
-        await bot.send_message(user[0], "✅ Payment confirmed! Your order is now in production.")
+        await bot.send_message(user[0], "✅ Payment confirmed! Your order is in production.")
 
     await msg.answer("Approved.")
 
@@ -268,6 +265,6 @@ async def main():
     await init_db()
     await dp.start_polling(bot)
 
-if __name__ == "__main__":
+if name == "__main__":
     logging.basicConfig(level=logging.INFO)
     asyncio.run(main())
