@@ -9,7 +9,7 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 # ================= CONFIG =================
 TOKEN = "8208102735:AAHYRjL9sMS4qJobbbprv4cPzLCCNgatUL8"
-ADMIN_ID = 8208102735
+ADMIN_ID = 7833539117
 WALLET = "EVr1Xn8mm23AHh9voQea1fxGecc34pffNDFKrnkBA9Gu"
 
 bot = Bot(token=TOKEN)
