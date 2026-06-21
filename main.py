@@ -189,8 +189,6 @@ async def payment_screenshot(msg: types.Message):
     if msg.from_user.id == ADMIN_ID:
         return
 
-    order_id = payment_state.get(msg.from_user.id)
-
     file_id = None
 
     if msg.photo:
@@ -198,19 +196,17 @@ async def payment_screenshot(msg: types.Message):
     elif msg.document:
         file_id = msg.document.file_id
 
-    caption = (
-        f"💰 PAYMENT SCREENSHOT\n"
-        f"Order ID: {order_id if order_id else 'UNKNOWN'}\n"
-        f"User ID: {msg.from_user.id}\n"
-        f"Username: @{msg.from_user.username}"
+    await bot.send_message(
+        ADMIN_ID,
+        f"💰 PAYMENT PROOF\nUser: @{msg.from_user.username}\nUser ID: {msg.from_user.id}"
     )
 
     if msg.photo:
-        await bot.send_photo(ADMIN_ID, file_id, caption=caption)
+        await bot.send_photo(ADMIN_ID, file_id)
     else:
-        await bot.send_document(ADMIN_ID, file_id, caption=caption)
+        await bot.send_document(ADMIN_ID, file_id)
 
-    await msg.answer("✅ رسید پرداخت ارسال شد. منتظر تایید ادمین باش.")
+    await msg.answer("⏳ Payment sent for review. Wait for confirmation.")
 
 
 @dp.message(Command("approve"))
