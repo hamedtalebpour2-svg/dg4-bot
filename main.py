@@ -249,18 +249,26 @@ async def approve(msg: types.Message):
 
 # ================= DELIVERY SYSTEM =================
 
+delivery_state = {}
+
 @dp.message(Command("deliver"))
 async def deliver(msg: types.Message):
     if msg.from_user.id != ADMIN_ID:
         return
 
-    order_id = msg.get_args()
+    try:
+        order_id = msg.text.split()[1]
+    except:
+        await msg.answer("Use: /deliver ORDER_ID")
+        return
+
     delivery_state["order_id"] = order_id
+    await msg.answer("📤 حالا فایل (عکس یا PDF) رو بفرست")
+    
 
-    await msg.answer("📤 Send design file for this order (image / pdf / zip)")
-
-@dp.message(F.document | F.photo)
+@dp.message(F.photo | F.document)
 async def handle_delivery(msg: types.Message):
+
     if msg.from_user.id != ADMIN_ID:
         return
 
@@ -268,30 +276,29 @@ async def handle_delivery(msg: types.Message):
     if not order_id:
         return
 
-    file_id = None
-
-    if msg.document:
-        file_id = msg.document.file_id
-    elif msg.photo:
-        file_id = msg.photo[-1].file_id
+    file_id = msg.photo[-1].file_id if msg.photo else msg.document.file_id
 
     async with aiosqlite.connect("orders.db") as db:
-        await db.execute("""
-        UPDATE orders SET delivery_file=? WHERE id=?
-        """, (file_id, order_id))
+        await db.execute(
+            "UPDATE orders SET delivery_file=? WHERE id=?",
+            (file_id, order_id)
+        )
         await db.commit()
 
-        async with db.execute("SELECT user_id FROM orders WHERE id=?", (order_id,)) as c:
+        async with db.execute(
+            "SELECT user_id FROM orders WHERE id=?",
+            (order_id,)
+        ) as c:
             user = await c.fetchone()
 
     if user:
         await bot.send_document(
             user[0],
             file_id,
-            caption="🎉 Your order is ready! Delivered by DG4 Studio"
+            caption="🎉 Your order is delivered!"
         )
 
-    await msg.answer("✅ Delivered successfully!")
+    await msg.answer("✅ Delivered")
 
 # ================= MAIN =================
 async def main():
