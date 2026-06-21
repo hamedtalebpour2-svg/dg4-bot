@@ -81,11 +81,10 @@ async def select_service(call: types.CallbackQuery):
     await call.answer()
 
 # ================= STYLE + CREATE ORDER =================
-@dp.callback_query(F.data.in_(["minimal","modern","luxury","gaming"]))
+@dp.callback_query(F.data.in_(["minimal", "modern", "luxury", "gaming"]))
 async def style(call: types.CallbackQuery):
-
     user_id = call.from_user.id
-    data = user_state.get(user_id)
+    data = user_data.get(user_id)
 
     if not data:
         await call.message.answer("❌ Session expired. Send /start again.")
@@ -104,11 +103,16 @@ async def style(call: types.CallbackQuery):
             data["style"],
             data["price"],
             "WAITING_PAYMENT"
-            await call.message.answer(
-    f"""
+        ))
+
+        await db.commit()
+        order_id = cur.lastrowid
+
+    await call.message.answer(
+        f"""
 💰 PAYMENT REQUIRED
 
-Order ID: {cur.lastrowid}
+Order ID: {order_id}
 Service: {data['service']}
 Style: {data['style']}
 Price: ${data['price']}
@@ -120,7 +124,7 @@ Token: USDT (SPL)
 Network: Solana ONLY ⚡
 
 Wallet:
-{WALLET}
+EVr1Xn8mm23AHh9voQea1fxGecc34pffNDFKrnkBA9Gu
 
 ────────────────────
 
@@ -128,35 +132,18 @@ Wallet:
 
 📸 After payment send screenshot here.
 """
-)
-        ))
-
-        await db.commit()
-        order_id = cur.lastrowid
-
-    order_state[user_id] = order_id
-
-    await call.message.answer(
-        f"""
-💰 PAYMENT REQUIRED
-
-Order ID: {order_id}
-Service: {data['service']}
-Style: {data['style']}
-Price: ${data['price']}
-
-Send payment screenshot after payment.
-"""
     )
 
     await bot.send_message(
         ADMIN_ID,
         f"""
 🆕 NEW ORDER
+
 ID: {order_id}
 User: @{call.from_user.username}
 Service: {data['service']}
 Style: {data['style']}
+Price: ${data['price']}
 """
     )
 
