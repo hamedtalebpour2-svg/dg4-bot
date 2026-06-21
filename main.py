@@ -183,7 +183,7 @@ async def track(msg: types.Message):
         await msg.answer("No orders found.")
 
 
-@dp.message(F.photo)
+@dp.message(F.photo | F.document)
 async def payment_screenshot(msg: types.Message):
 
     if msg.from_user.id == ADMIN_ID:
@@ -191,16 +191,26 @@ async def payment_screenshot(msg: types.Message):
 
     order_id = payment_state.get(msg.from_user.id)
 
-    if not order_id:
-        return
+    file_id = None
 
-    await bot.send_photo(
-        ADMIN_ID,
-        msg.photo[-1].file_id,
-        caption=f"💰 PAYMENT SCREENSHOT\nOrder ID: {order_id}\nUser ID: {msg.from_user.id}\nUsername: @{msg.from_user.username}"
+    if msg.photo:
+        file_id = msg.photo[-1].file_id
+    elif msg.document:
+        file_id = msg.document.file_id
+
+    caption = (
+        f"💰 PAYMENT SCREENSHOT\n"
+        f"Order ID: {order_id if order_id else 'UNKNOWN'}\n"
+        f"User ID: {msg.from_user.id}\n"
+        f"Username: @{msg.from_user.username}"
     )
 
-    await msg.answer("✅ Screenshot received.\nWaiting for admin confirmation.")
+    if msg.photo:
+        await bot.send_photo(ADMIN_ID, file_id, caption=caption)
+    else:
+        await bot.send_document(ADMIN_ID, file_id, caption=caption)
+
+    await msg.answer("✅ رسید پرداخت ارسال شد. منتظر تایید ادمین باش.")
 
 
 @dp.message(Command("approve"))
