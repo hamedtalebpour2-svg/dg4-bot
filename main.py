@@ -144,7 +144,8 @@ async with aiosqlite.connect("orders.db") as db:
         """, (file_id, order_id))
         await db.commit()
 
-    order_state[msg.from_user.id]["stage"] = "WAITING_APPROVAL"
+    order_state[msg.from_user.id]
+["stage"] = "WAITING_APPROVAL"
 
     await bot.send_photo(
         ADMIN_ID,
