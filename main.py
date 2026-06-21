@@ -1,23 +1,19 @@
 import asyncio
 import logging
 import aiosqlite
-import aiohttp
 
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 # ================= CONFIG =================
-TOKEN = "8208102735:AAHodLVCGzxjWCjUCkds8QiYgtuigl4BDb0"
+TOKEN = "YOUR_BOT_TOKEN"
 ADMIN_ID = 7833539117
-WALLET = "EVr1Xn8mm23AHh9voQea1fxGecc34pffNDFKrnkBA9Gu"
-
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
-user_data = {}
-delivery_state = {}
-payment_state = {}
+user_state = {}
+order_state = {}
 
 # ================= DB =================
 async def init_db():
@@ -31,7 +27,7 @@ async def init_db():
             style TEXT,
             price REAL,
             status TEXT,
-            delivery_file TEXT
+            file_id TEXT
         )
         """)
         await db.commit()
@@ -44,31 +40,35 @@ async def start(msg: types.Message):
         [InlineKeyboardButton(text="📦 My Orders", callback_data="track")]
     ])
 
-    await msg.answer("🎨 Welcome to DG4 Fiverr Mode Bot", reply_markup=kb)
+    await msg.answer("🎨 Welcome to DG4 Fiverr Bot", reply_markup=kb)
 
 # ================= SERVICES =================
 @dp.callback_query(F.data == "services")
 async def services(call: types.CallbackQuery):
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Logo Design - $20", callback_data="logo")],
-        [InlineKeyboardButton(text="Brand Identity - $45", callback_data="brand")],
-        [InlineKeyboardButton(text="Social Kit - $15", callback_data="social")]
+        [InlineKeyboardButton(text="Logo - $20", callback_data="logo")],
+        [InlineKeyboardButton(text="Brand - $45", callback_data="brand")],
+        [InlineKeyboardButton(text="Social - $15", callback_data="social")]
     ])
 
     await call.message.answer("Choose service:", reply_markup=kb)
     await call.answer()
 
-# ================= SERVICE SELECT =================
-@dp.callback_query(F.data.in_(["logo","brand","social"]))
+# ================= SELECT SERVICE =================
+@dp.callback_query(F.data.in_(["logo", "brand", "social"]))
 async def select_service(call: types.CallbackQuery):
-    data_map = {
+    data = {
         "logo": ("Logo Design", 20),
         "brand": ("Brand Identity", 45),
         "social": ("Social Kit", 15)
     }
 
-    service, price = data_map[call.data]
-    user_data[call.from_user.id] = {"service": service, "price": price}
+    service, price = data[call.data]
+
+    user_state[call.from_user.id] = {
+        "service": service,
+        "price": price
+    }
 
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="Minimal", callback_data="minimal")],
@@ -80,30 +80,36 @@ async def select_service(call: types.CallbackQuery):
     await call.message.answer("Choose style:", reply_markup=kb)
     await call.answer()
 
-# ================= STYLE + ORDER CREATE =================
+# ================= STYLE + CREATE ORDER =================
 @dp.callback_query(F.data.in_(["minimal","modern","luxury","gaming"]))
 async def style(call: types.CallbackQuery):
-    user_data[call.from_user.id]["style"] = call.data
-    data = user_data[call.from_user.id]
+
+    user_id = call.from_user.id
+    data = user_state.get(user_id)
+
+    if not data:
+        await call.message.answer("❌ Session expired. Send /start again.")
+        return
+
+    data["style"] = call.data
 
     async with aiosqlite.connect("orders.db") as db:
-        await db.execute("""
-        INSERT INTO orders (user_id, username, service, style, price, status)
-        VALUES (?, ?, ?, ?, ?, ?)
+        cur = await db.execute("""
+            INSERT INTO orders (user_id, username, service, style, price, status)
+            VALUES (?, ?, ?, ?, ?, ?)
         """, (
-            call.from_user.id,
+            user_id,
             call.from_user.username,
             data["service"],
             data["style"],
             data["price"],
             "WAITING_PAYMENT"
         ))
+
         await db.commit()
+        order_id = cur.lastrowid
 
-        async with db.execute("SELECT last_insert_rowid()") as c:
-            order_id = (await c.fetchone())[0]
-
-    payment_state[call.from_user.id] = order_id
+    order_state[user_id] = order_id
 
     await call.message.answer(
         f"""
@@ -114,79 +120,29 @@ Service: {data['service']}
 Style: {data['style']}
 Price: ${data['price']}
 
-Send USDT (SPL - Solana ONLY):
-
-Wallet:
-{WALLET}
-
-📸 After payment send a screenshot here.
+Send payment screenshot after payment.
 """
     )
 
     await bot.send_message(
         ADMIN_ID,
-        f"🆕 NEW ORDER\nID: {order_id}\nUser: @{call.from_user.username}\nService: {data['service']}\nStyle: {data['style']}"
+        f"""
+🆕 NEW ORDER
+ID: {order_id}
+User: @{call.from_user.username}
+Service: {data['service']}
+Style: {data['style']}
+"""
     )
 
     await call.answer()
 
-# ================= SOLANA CHECK =================
-async def check_solana():
-    url = "https://api.mainnet-beta.solana.com"
-
-    payload = {
-        "jsonrpc": "2.0",
-        "id": 1,
-        "method": "getSignaturesForAddress",
-        "params": [WALLET, {"limit": 10}]
-    }
-
-    async with aiohttp.ClientSession() as session:
-        async with session.post(url, json=payload) as r:
-            return await r.json()
-
-# ================= PAYMENT LOOP =================
-async def payment_loop():
-    while True:
-        async with aiosqlite.connect("orders.db") as db:
-            async with db.execute("SELECT id, user_id, username FROM orders WHERE status='WAITING_PAYMENT'") as c:
-                orders = await c.fetchall()
-
-                data = await check_solana()
-
-                if data.get("result"):
-                    for o in orders:
-                        await db.execute("UPDATE orders SET status='PAID' WHERE id=?", (o[0],))
-                        await db.commit()
-
-                        await bot.send_message(o[1], "✅ Payment confirmed! Now waiting for design.")
-
-                        await bot.send_message(
-                            ADMIN_ID,
-                            f"💰 PAID ORDER\nID: {o[0]}\nUser: @{o[2]}"
-                        )
-
-        await asyncio.sleep(20)
-
-# ================= TRACK =================
-@dp.message(Command("track"))
-async def track(msg: types.Message):
-    async with aiosqlite.connect("orders.db") as db:
-        async with db.execute("""
-        SELECT status FROM orders WHERE user_id=? ORDER BY id DESC LIMIT 1
-        """, (msg.from_user.id,)) as c:
-            r = await c.fetchone()
-
-    if r:
-        await msg.answer(f"📦 Status: {r[0]}")
-    else:
-        await msg.answer("No orders found.")
-
-
+# ================= PAYMENT SCREENSHOT =================
 @dp.message(F.photo | F.document)
-async def payment_screenshot(msg: types.Message):
+async def payment(msg: types.Message):
 
-    if msg.from_user.id == ADMIN_ID:
+    order_id = order_state.get(msg.from_user.id)
+    if not order_id:
         return
 
     file_id = None
@@ -196,100 +152,95 @@ async def payment_screenshot(msg: types.Message):
     elif msg.document:
         file_id = msg.document.file_id
 
-    await bot.send_message(
+    async with aiosqlite.connect("orders.db") as db:
+        await db.execute("""
+            UPDATE orders SET file_id=?, status='WAITING_APPROVAL'
+            WHERE id=?
+        """, (file_id, order_id))
+        await db.commit()
+
+    # send to admin ALWAYS
+    await bot.send_photo(
         ADMIN_ID,
-        f"💰 PAYMENT PROOF\nUser: @{msg.from_user.username}\nUser ID: {msg.from_user.id}"
+        file_id,
+        caption=f"💳 Payment proof\nOrder ID: {order_id}\n\nReply /approve {order_id}"
     )
 
-    if msg.photo:
-        await bot.send_photo(ADMIN_ID, file_id)
-    else:
-        await bot.send_document(ADMIN_ID, file_id)
+    await msg.answer("✅ Payment sent to admin for review.")
 
-    await msg.answer("⏳ Payment sent for review. Wait for confirmation.")
-
-
+# ================= APPROVE PAYMENT =================
 @dp.message(Command("approve"))
 async def approve(msg: types.Message):
 
     if msg.from_user.id != ADMIN_ID:
         return
 
-    parts = msg.text.split()
-
-    if len(parts) != 2:
-        await msg.answer("Usage: /approve ORDER_ID")
+    try:
+        order_id = int(msg.text.split()[1])
+    except:
+        await msg.answer("Use: /approve <order_id>")
         return
 
-    order_id = int(parts[1])
-
     async with aiosqlite.connect("orders.db") as db:
-
-        await db.execute(
-            "UPDATE orders SET status='PAID' WHERE id=?",
-            (order_id,)
-        )
-
+        await db.execute("""
+            UPDATE orders SET status='PAID' WHERE id=?
+        """, (order_id,))
         await db.commit()
 
-        async with db.execute(
-            "SELECT user_id FROM orders WHERE id=?",
-            (order_id,)
-        ) as c:
-
-            user = await c.fetchone()
+        cur = await db.execute("SELECT user_id FROM orders WHERE id=?", (order_id,))
+        user = await cur.fetchone()
 
     if user:
-        await bot.send_message(
-            user[0],
-            "✅ Payment confirmed. Your order is now in progress."
-        )
+        await bot.send_message(user[0], "✅ Payment confirmed! Your order is now in production.")
 
-    await msg.answer("Order approved.")
+    await msg.answer("Approved.")
 
-# ================= DELIVERY SYSTEM =================
+# ================= TRACK =================
+@dp.message(Command("track"))
+async def track(msg: types.Message):
 
-delivery_state = {}
+    async with aiosqlite.connect("orders.db") as db:
+        cur = await db.execute("""
+            SELECT status FROM orders WHERE user_id=? ORDER BY id DESC LIMIT 1
+        """, (msg.from_user.id,))
+        r = await cur.fetchone()
 
+    if r:
+        await msg.answer(f"📦 Status: {r[0]}")
+    else:
+        await msg.answer("No orders found.")
+
+# ================= DELIVERY =================
 @dp.message(Command("deliver"))
 async def deliver(msg: types.Message):
+
     if msg.from_user.id != ADMIN_ID:
         return
 
     try:
-        order_id = msg.text.split()[1]
+        order_id = int(msg.text.split()[1])
     except:
-        await msg.answer("Use: /deliver ORDER_ID")
+        await msg.answer("Use: /deliver <order_id>")
         return
 
-    delivery_state["order_id"] = order_id
-    await msg.answer("📤 حالا فایل (عکس یا PDF) رو بفرست")
-    
+    order_state["delivery"] = order_id
+    await msg.answer("Send final file now.")
 
-@dp.message(F.photo | F.document)
+@dp.message(F.document | F.photo)
 async def handle_delivery(msg: types.Message):
 
     if msg.from_user.id != ADMIN_ID:
         return
 
-    order_id = delivery_state.get("order_id")
+    order_id = order_state.get("delivery")
     if not order_id:
         return
 
-    file_id = msg.photo[-1].file_id if msg.photo else msg.document.file_id
+    file_id = msg.document.file_id if msg.document else msg.photo[-1].file_id
 
     async with aiosqlite.connect("orders.db") as db:
-        await db.execute(
-            "UPDATE orders SET delivery_file=? WHERE id=?",
-            (file_id, order_id)
-        )
-        await db.commit()
-
-        async with db.execute(
-            "SELECT user_id FROM orders WHERE id=?",
-            (order_id,)
-        ) as c:
-            user = await c.fetchone()
+        cur = await db.execute("SELECT user_id FROM orders WHERE id=?", (order_id,))
+        user = await cur.fetchone()
 
     if user:
         await bot.send_document(
@@ -298,13 +249,13 @@ async def handle_delivery(msg: types.Message):
             caption="🎉 Your order is delivered!"
         )
 
-    await msg.answer("✅ Delivered")
+    await msg.answer("Delivered successfully!")
 
 # ================= MAIN =================
 async def main():
     await init_db()
     await dp.start_polling(bot)
 
-if __name__ == "__main__":
+if name == "__main__":
     logging.basicConfig(level=logging.INFO)
     asyncio.run(main())
